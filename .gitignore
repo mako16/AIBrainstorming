@@ -1,0 +1,20 @@
+# Entornos virtuales
+.env/
+.venv/
+brainstorming/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de configuración de usuario
+*.env
+*.DS_Store
+
+# Archivos de Jupyter y VSCode
+.ipynb_checkpoints/
+.vscode/
+
+# Archivos de sistema
+Thumbs.db
+.DS_Store
