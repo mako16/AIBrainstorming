@@ -7,6 +7,8 @@ __pycache__/
 *.pyo
 *.pyd
 
+token.txt
+
 # Archivos de configuración de usuario
 *.env
 *.DS_Store
