@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # ===================== AIBrainstorming =====================
 # Este script permite simular un brainstorming entre varios modelos de IA usando Ollama.
+# - Cada modelo puede tener su propio contexto, pasado por línea de comandos.
+# - El prompt (tópico y reglas) es igual para todos.
+# - Puedes participar como humano en el debate usando la opción --humano.
 # - Solo se mantienen instalados los modelos especificados por el usuario, los demás se eliminan para optimizar recursos.
 # - Si un modelo ya está instalado, no se vuelve a descargar.
-# - Cada modelo responde como un especialista humano en el tema, nunca como IA.
-# - El turno inicial es aleatorio y la conversación alterna entre todos los modelos.
-# - El contexto y tópico se pasan como argumentos y se incluyen en cada turno.
+# - El turno inicial es aleatorio y la conversación alterna entre todos los participantes.
 # - El usuario puede detener la discusión en cualquier momento con Ctrl+C.
 # ===========================================================
 
@@ -141,44 +142,83 @@ def hay_consenso(historial, modelos):
 # -----------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Brainstorming multi-modelo con Ollama")
-    parser.add_argument("--contexto", required=True, help="Contexto general del brainstorming")
+    parser.add_argument("--contextos", nargs='+', required=True, help="Lista de contextos, uno por cada modelo (en el mismo orden que --instalar-modelos)")
     parser.add_argument("--topico", required=True, help="Tópico específico a discutir")
     parser.add_argument("--instalar-modelos", nargs='+', required=True, help="Lista de modelos Ollama a usar")
     parser.add_argument("--pausa", type=float, default=1.5, help="Segundos de pausa entre turnos (solo con --auto)")
     parser.add_argument("--auto", action="store_true", help="Avanza automáticamente entre rondas")
+    parser.add_argument("--humano", action="store_true", help="Incluye al usuario humano como participante del debate")
+    parser.add_argument("--nombre-humano", type=str, default="Humano", help="Nombre a mostrar para el participante humano")
     args = parser.parse_args()
 
     modelos = args.instalar_modelos
-    instalar_modelos(modelos)            # Primero instala los modelos requeridos si falta alguno
-    eliminar_modelos_no_usados(modelos)  # Luego elimina solo los modelos que no están en la lista de requeridos (nombre y tag exactos)
+    contextos = args.contextos
+    if len(contextos) != len(modelos):
+        print("Error: Debes pasar un contexto por cada modelo en el mismo orden que --instalar-modelos.")
+        exit(1)
+
+    # Si participa el humano, lo agregamos al final
+    participantes = modelos.copy()
+    contextos_participantes = contextos.copy()
+    if args.humano:
+        participantes.append("HUMANO")
+        contextos_participantes.append("")  # El humano no necesita contexto IA
+
+    eliminar_modelos_no_usados(modelos)
+    instalar_modelos(modelos)
+
+    historial = []
+    ronda = 1
 
     # Instrucción para todos los modelos: deben debatir como especialistas humanos y usar la frase de consenso
-    contexto_modelo = (
-        f"{args.contexto}\n"
+    instruccion_consenso = (
         "Debes debatir como un especialista humano en el tema, sin mencionar que eres un modelo de IA. "
         'Cuando estés totalmente de acuerdo con la propuesta del otro especialista, responde exactamente con la frase: "estoy definitivamente de acuerdo".'
     )
-    participantes = modelos.copy()
-    nombres = [f"Especialista {i+1}" for i in range(len(participantes))]
-    # Mensaje inicial para el primer modelo
-    mensaje_inicial = f"Contexto: {args.contexto}\nTópico: {args.topico}\nPor favor, propón tu mejor idea inicial."
-    primer_modelo = participantes[0]
-    historial = [{
-        "role": "assistant",
-        "modelo": primer_modelo,
-        "content": consultar_ollama(primer_modelo, [
-            {"role": "system", "content": contexto_modelo},
-            {"role": "user", "content": mensaje_inicial}
-        ])
-    }]
-    ronda = 1
+
+    # Elige aleatoriamente el participante que inicia
+    idx_inicial = random.randint(0, len(participantes) - 1)
+    orden = participantes[idx_inicial:] + participantes[:idx_inicial]
+    contextos_orden = contextos_participantes[idx_inicial:] + contextos_participantes[:idx_inicial]
+
+    # Mostrar correspondencia entre modelos y contextos antes de iniciar
+    print("\n=== Asignación de contextos a modelos ===")
+    for modelo, contexto in zip(participantes, contextos_participantes):
+        if modelo == "HUMANO":
+            print(f"{args.nombre_humano}: (participante humano)")
+        else:
+            print(f"{modelo}: {contexto}")
+    print("========================================\n")
+
+    # Mensaje inicial para el primer participante
+    mensaje_inicial = f"Tópico: {args.topico}\nPor favor, propón tu mejor idea inicial."
+    primer_participante = orden[0]
+    primer_contexto = contextos_orden[0]
+    if primer_participante == "HUMANO":
+        print(f"\n{args.nombre_humano}, es tu turno de iniciar el debate.")
+        respuesta_humano = input("Tu respuesta: ")
+        historial.append({
+            "role": "assistant",
+            "modelo": args.nombre_humano,
+            "content": respuesta_humano
+        })
+    else:
+        contexto_modelo = f"{primer_contexto}\n{instruccion_consenso}"
+        historial.append({
+            "role": "assistant",
+            "modelo": primer_participante,
+            "content": consultar_ollama(primer_participante, [
+                {"role": "system", "content": contexto_modelo},
+                {"role": "user", "content": mensaje_inicial}
+            ])
+        })
     mostrar_discusion(historial, ronda, args.pausa, args.auto, participantes)
 
-    orden = list(participantes)  # Copia del orden original de participantes
     while True:
         ronda += 1
         for i in range(1, len(orden)):
-            modelo = orden[i]
+            participante = orden[i]
+            contexto = contextos_orden[i]
             anterior = historial[-1]
             prompt = (
                 f"Esta es la última propuesta del especialista anterior ({anterior['modelo']}):\n"
@@ -186,18 +226,28 @@ if __name__ == "__main__":
                 "Responde como un especialista humano, debatiendo el tema. "
                 'Si estás totalmente de acuerdo, responde exactamente con la frase: "estoy definitivamente de acuerdo".'
             )
-            mensajes = [
-                {"role": "system", "content": contexto_modelo},
-                {"role": "user", "content": prompt}
-            ]
-            respuesta = consultar_ollama(modelo, mensajes)
-            historial.append({
-                "role": "assistant",
-                "modelo": modelo,
-                "content": respuesta
-            })
+            if participante == "HUMANO":
+                print(f"\n{args.nombre_humano}, es tu turno de responder.")
+                print(f"{prompt}")
+                respuesta_humano = input("Tu respuesta: ")
+                historial.append({
+                    "role": "assistant",
+                    "modelo": args.nombre_humano,
+                    "content": respuesta_humano
+                })
+            else:
+                contexto_modelo = f"{contexto}\n{instruccion_consenso}"
+                mensajes = [
+                    {"role": "system", "content": contexto_modelo},
+                    {"role": "user", "content": prompt}
+                ]
+                respuesta = consultar_ollama(participante, mensajes)
+                historial.append({
+                    "role": "assistant",
+                    "modelo": participante,
+                    "content": respuesta
+                })
             mostrar_discusion(historial, ronda, args.pausa, args.auto, participantes)
-            # Chequeo de consenso tras cada ronda completa
             if hay_consenso(historial, participantes):
                 print("\n¡Todos los especialistas han llegado a un consenso!")
                 for idx, h in enumerate(historial[-len(participantes):]):
@@ -205,3 +255,4 @@ if __name__ == "__main__":
                 exit(0)
         # Alterna el orden para la siguiente ronda
         orden = orden[1:] + orden[:1]
+        contextos_orden = contextos_orden[1:] + contextos_orden[:1]
