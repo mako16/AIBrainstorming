@@ -4,10 +4,12 @@
 # - Cada modelo puede tener su propio contexto, pasado por línea de comandos.
 # - El prompt (tópico y reglas) es igual para todos.
 # - Puedes participar como humano en el debate usando la opción --humano.
-# - Solo se mantienen instalados los modelos especificados por el usuario, los demás se eliminan para optimizar recursos.
+# - Solo se mantienen instalados los modelos especificados por el usuario, los demás se pueden liberar de memoria.
 # - Si un modelo ya está instalado, no se vuelve a descargar.
 # - El turno inicial es aleatorio y la conversación alterna entre todos los participantes.
 # - El usuario puede detener la discusión en cualquier momento con Ctrl+C.
+# - Para optimizar recursos, solo un modelo IA está cargado en memoria a la vez: se usa 'ollama stop' para liberar los modelos que no están en turno, evitando así el consumo excesivo de RAM.
+# - 'ollama stop' solo libera el modelo de la RAM, pero NO lo borra del disco. Así, los modelos siguen disponibles localmente y no es necesario volver a descargarlos.
 # ===========================================================
 
 import argparse
@@ -20,14 +22,13 @@ import random
 
 # -----------------------------------------------------------
 # Función para eliminar modelos no usados
-# Elimina de Ollama todos los modelos que no estén en la lista de modelos_usados
-# para liberar memoria y espacio, pero solo si no están en la lista de modelos requeridos.
+# Elimina de la memoria (RAM) todos los modelos que no estén en la lista de modelos_usados
+# usando 'ollama stop', pero NO los borra del disco. Así, solo el modelo en turno está cargado en RAM.
 # -----------------------------------------------------------
 def eliminar_modelos_no_usados(modelos_usados):
     """
-    Elimina de Ollama todos los modelos que no estén en la lista de modelos_usados para liberar memoria y espacio,
-    pero solo si no están en la lista de modelos requeridos por el usuario.
-    Usa regex para coincidencia exacta de nombre base y versión/tag si corresponde.
+    Libera de la memoria (RAM) todos los modelos que no estén en la lista de modelos_usados usando 'ollama stop'.
+    No borra los modelos del disco, solo los descarga de la RAM para optimizar recursos.
     """
     import re
     try:
@@ -44,12 +45,12 @@ def eliminar_modelos_no_usados(modelos_usados):
         for modelo in modelos_actuales:
             keep = any(pat.match(modelo) for pat in patrones)
             if not keep:
-                print(f"Eliminando modelo no usado: {modelo}")
-                subprocess.run(['ollama', 'rm', modelo])
+                print(f"Liberando modelo de memoria (stop): {modelo}")
+                subprocess.run(['ollama', 'stop', modelo])
             else:
                 print(f"Modelo requerido '{modelo}' ya está instalado y se mantiene.")
     except Exception as e:
-        print(f"Advertencia: No se pudieron eliminar modelos no usados: {e}")
+        print(f"Advertencia: No se pudieron liberar modelos no usados: {e}")
 
 # -----------------------------------------------------------
 # Función para instalar modelos requeridos

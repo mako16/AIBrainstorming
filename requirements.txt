@@ -1,2 +1,4 @@
 requests
-ollama
+gradio
+beautifulsoup4
+ollama==0.5.1
