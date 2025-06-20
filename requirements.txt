@@ -1,4 +1,6 @@
-requests
+psutil
 gradio
+python-dotenv
+requests
 beautifulsoup4
-ollama==0.5.1
+reportlab
